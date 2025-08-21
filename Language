@@ -1,0 +1,74 @@
+// server.js
+import express from "express";
+import bodyParser from "body-parser";
+import dotenv from "dotenv";
+
+dotenv.config();
+const app = express().use(bodyParser.json());
+
+// ✅ VERIFY WEBHOOK (Facebook calls this when setting up)
+app.get("/webhook", (req, res) => {
+  const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode && token) {
+    if (mode === "subscribe" && token === VERIFY_TOKEN) {
+      console.log("✅ WEBHOOK_VERIFIED");
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
+  }
+});
+
+// ✅ HANDLE MESSAGES
+app.post("/webhook", (req, res) => {
+  let body = req.body;
+
+  if (body.object === "page") {
+    body.entry.forEach(function (entry) {
+      let webhook_event = entry.messaging[0];
+      console.log(webhook_event);
+
+      // Get sender PSID
+      let sender_psid = webhook_event.sender.id;
+      console.log("Sender PSID: " + sender_psid);
+
+      if (webhook_event.message) {
+        handleMessage(sender_psid, webhook_event.message);
+      }
+    });
+    res.status(200).send("EVENT_RECEIVED");
+  } else {
+    res.sendStatus(404);
+  }
+});
+
+// ✅ SEND MESSAGE BACK
+import fetch from "node-fetch";
+
+function callSendAPI(sender_psid, response) {
+  let request_body = {
+    recipient: {
+      id: sender_psid,
+    },
+    message: response,
+  };
+
+  fetch(`https://graph.facebook.com/v13.0/me/messages?access_token=${process.env.PAGE_ACCESS_TOKEN}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request_body),
+  })
+    .then((res) => res.json())
+    .then((json) => console.log("Message sent:", json))
+    .catch((err) => console.error("Error:", err));
+}
+
+function handleMessage(sender_psid, received_message) {
+  let response;
+  if (received_message.text) {
+    response = { text: `Echo
